@@ -1,4 +1,4 @@
-/* エイル PWA v0.3.1 — ボイスジャーナル & タスク（GAS バックエンドと通信） */
+/* エイル PWA v0.3.2 — ボイスジャーナル & タスク（GAS バックエンドと通信） */
 'use strict';
 
 // ===== 設定（スマホの中だけに保存。GitHubには置かない）=====
@@ -9,6 +9,7 @@ const store = {
   set pin(v) { localStorage.setItem('eile_pin', v.trim()); },
 };
 
+const IMG_VER = '2'; // 画像を差し替えたら数字を上げる（キャッシュ対策）
 const THEMES = ['仕事', '思想', 'AI', '家族', '健康', '顧客', 'お金'];
 const MOODS = ['良い', '普通', '低め', '高揚', '疲れ'];
 const STEPS = ['なし', '足す', '引く', '変える'];
@@ -25,7 +26,7 @@ let rec = null;         // 録音中の状態
 const eileEl = $('.eile'), eileImg = $('#eile-img'), eileSay = $('#eile-say');
 function eile(state, text) {
   eileEl.className = 'eile is-' + state;
-  eileImg.src = './img/eile_' + state + '.png';
+  eileImg.src = './img/eile_' + state + '.png?v=' + IMG_VER;
   if (text != null) eileSay.textContent = text;
 }
 
@@ -387,7 +388,7 @@ function settings() {
         <button type="button" class="btn quiet" id="reload">アプリを最新版に更新</button>
       </div>
       <p class="small">これらはこの端末の中だけに保存されます。ホーム画面に追加すると、アプリとして開けます（Chromeのメニュー →「ホーム画面に追加」）。</p>
-      <p class="small">v0.3.1</p>
+      <p class="small">v0.3.2</p>
     </form>`;
   $('#f').onsubmit = async e => {
     e.preventDefault();

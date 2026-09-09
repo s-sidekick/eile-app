@@ -1,5 +1,5 @@
 /* エイル PWA service worker — アプリの見た目だけをキャッシュ。GASへの通信はキャッシュしない */
-const VERSION = 'eile-v0.3.1';
+const VERSION = 'eile-v0.3.2';
 const SHELL = ['./', './index.html', './style.css', './app.js', './manifest.json',
   './img/eile_idle.png', './img/eile_listening.png', './img/eile_thinking.png', './img/eile_done.png', './img/eile_warn.png',
   './icons/icon-192.png', './icons/icon-512.png'];
