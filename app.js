@@ -1,4 +1,4 @@
-/* エイル PWA v0.3 — ボイスジャーナル & タスク（GAS バックエンドと通信） */
+/* エイル PWA v0.3.1 — ボイスジャーナル & タスク（GAS バックエンドと通信） */
 'use strict';
 
 // ===== 設定（スマホの中だけに保存。GitHubには置かない）=====
@@ -15,6 +15,7 @@ const STEPS = ['なし', '足す', '引く', '変える'];
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
+const addDaysLocal = n => { const d = new Date(Date.now() + n * 86400000); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 let draft = null;       // 文字起こし結果（確認画面の元データ）
@@ -77,11 +78,23 @@ async function home() {
   app.innerHTML = `
     ${!store.url ? `<div class="notice">はじめに <a href="#/settings">設定</a> でGASのURLと合言葉を入れてください。</div>` : ''}
     <div id="pending"></div>
+    <div id="today"></div>
     <div class="tiles">
       <button class="tile" data-go="journal"><span>ボイスジャーナル<small>今日の考え・判断・違和感を話す</small></span><span>›</span></button>
       <button class="tile" data-go="task"><span>タスク<small>やることを話して登録・完了</small></span><span>›</span></button>
     </div>`;
   bindGo();
+  if (store.url && store.pin) {
+    api('listReviews', { kind: '日次' }).then(({ reviews }) => {
+      const r = reviews[0];
+      if (!r) return;
+      const d0 = addDaysLocal(-1);
+      const fresh = r.start === d0;
+      $('#today').innerHTML = `<div class="tiles" style="margin-bottom:12px"><button class="tile" data-go="review/day/${r.id}"><span>${fresh ? '今朝のレビュー' : '最新のレビュー'}<small>${esc(r.title)}</small></span><span>›</span></button></div>`;
+      bindGo();
+      if (fresh) eile('idle', 'おはようございます。今朝のレビューができています。');
+    }).catch(() => {});
+  }
   try {
     const items = await queueAll();
     if (items.length) {
@@ -313,7 +326,7 @@ async function taskList() {
     const { tasks } = await api('listTasks');
     eile('idle', tasks.length ? `未完は ${tasks.length} 件です。` : '未完のタスクはありません。');
     if (!tasks.length) { app.innerHTML = `<div class="empty">すべて片づいています。</div>`; return; }
-    const d0 = new Date(), today = d0.getFullYear() + '-' + String(d0.getMonth() + 1).padStart(2, '0') + '-' + String(d0.getDate()).padStart(2, '0');
+    const today = addDaysLocal(0);
     app.innerHTML = `<div class="list">${tasks.map(t => `
       <div class="item">
         <div><div class="t"><span class="num">TK-${t.num}</span>${esc(t.title)}</div>
@@ -374,7 +387,7 @@ function settings() {
         <button type="button" class="btn quiet" id="reload">アプリを最新版に更新</button>
       </div>
       <p class="small">これらはこの端末の中だけに保存されます。ホーム画面に追加すると、アプリとして開けます（Chromeのメニュー →「ホーム画面に追加」）。</p>
-      <p class="small">v0.3</p>
+      <p class="small">v0.3.1</p>
     </form>`;
   $('#f').onsubmit = async e => {
     e.preventDefault();
