@@ -1,4 +1,4 @@
-/* エイル PWA v0.3.2 — ボイスジャーナル & タスク（GAS バックエンドと通信） */
+/* エイル PWA v0.5.0 — ボイスジャーナル & タスク（GAS バックエンドと通信） */
 'use strict';
 
 // ===== 設定（スマホの中だけに保存。GitHubには置かない）=====
@@ -63,7 +63,14 @@ function go(path) { location.hash = path ? '#/' + path : ''; }
 function seg() { return location.hash.replace(/^#\/?/, '').split('/').filter(Boolean); }
 
 function render() {
-  stopRecorder();
+  if (rec) { // 録音中に画面を離れた → 破棄せず端末に保留
+    const r = rec;
+    stopRecorder().then(blob => {
+      if (blob && blob.size > 2000) queuePut({ id: 'p' + Date.now(), kind: r.kind, blob, mime: blob.type, created: r.startedAt }).then(() => {
+        eile('warn', '録音を途中で離れたので、端末に保留しました。ホームから送れます。');
+      }).catch(() => {});
+    });
+  }
   const s = seg();
   const key = s[0] || 'home';
   const screens = { home, journal, task, review, settings };
@@ -162,8 +169,9 @@ function recordScreen(kind) {
       }, 500);
     } else {
       mic.disabled = true; mic.classList.remove('pulse'); mic.textContent = '送信中…';
+      const startedAt = rec.startedAt;
       const blob = await stopRecorder();
-      await sendAudio(kind, blob);
+      await sendAudio(kind, blob, null, startedAt);
     }
   };
 }
@@ -192,25 +200,27 @@ function blobToBase64(blob) {
   return new Promise((ok, ng) => { const fr = new FileReader(); fr.onload = () => ok(String(fr.result).split(',')[1]); fr.onerror = () => ng(fr.error); fr.readAsDataURL(blob); });
 }
 
-async function sendAudio(kind, blob, pendingId) {
+async function sendAudio(kind, blob, pendingId, recordedAt) {
   if (!blob || !blob.size) { eile('warn', '録音が空でした。もう一度お願いします。'); go(kind); return; }
   eile('thinking', '文字にして、整理しています。少し待ってください…');
+  const recorded = new Date(recordedAt || Date.now()).toISOString(); // 録音した時刻（再送でも記録日は録音日）
   try {
     const audio = await blobToBase64(blob);
-    const r = await api('transcribe', { kind, audio, mime: blob.type || 'audio/webm' });
+    const r = await api('transcribe', { kind, audio, mime: blob.type || 'audio/webm', recordedAt: recorded });
     draft = { ...r, pendingId: pendingId || null };
     if (pendingId) await queueDel(pendingId);
     go(kind + '/confirm');
   } catch (err) {
-    if (!pendingId) { try { await queuePut({ id: 'p' + Date.now(), kind, blob, mime: blob.type, created: Date.now() }); } catch (_) {} }
-    eile('warn', '送れませんでした。録音はこの端末に残したので、あとでホームから送れます。');
+    let kept = !!pendingId;
+    if (!pendingId) { try { await queuePut({ id: 'p' + Date.now(), kind, blob, mime: blob.type, created: recordedAt || Date.now() }); kept = true; } catch (_) {} }
+    eile('warn', kept ? '送れませんでした。録音はこの端末に残したので、あとでホームから送れます。' : '送れず、端末への保存もできませんでした。この録音は失われます。');
     app.innerHTML = `<div class="notice warn">${esc(err.message || err)}</div><div class="actions"><button class="btn" data-go="">ホームへ</button></div>`;
     bindGo();
   }
 }
 
 async function sendPending(item) {
-  await sendAudio(item.kind, item.blob, item.id);
+  await sendAudio(item.kind, item.blob, item.id, item.created);
 }
 
 // ===== ジャーナル確認 =====
@@ -258,7 +268,7 @@ function journalConfirm() {
       tasks: $$('#tasks .row3').map(r => ({ register: $('input[type=checkbox]', r).checked, title: $('input[name=tt]', r).value.trim(), due: $('input[name=td]', r).value || null })).filter(t => t.title),
       audioUrl: draft.audioUrl, baseName: draft.baseName,
     };
-    await save('saveJournal', body, r => ({ url: r.pageUrl, extra: r.taskNums.length ? 'タスク TK-' + r.taskNums.join(', TK-') + ' も登録しました。' : '' }), 'journal');
+    await save('saveJournal', body, r => ({ url: r.pageUrl, extra: (r.duplicate ? 'この録音は登録済みでした（二重登録は防ぎました）。' : '') + (r.taskNums.length ? 'タスク TK-' + r.taskNums.join(', TK-') + ' も登録しました。' : '') }), 'journal');
   };
 }
 
@@ -287,8 +297,8 @@ function taskConfirm() {
   $('#f').onsubmit = async e => {
     e.preventDefault();
     const f = new FormData(e.target);
-    await save('saveTask', { title: f.get('title'), due: f.get('due') || null, detail: f.get('detail'), audioUrl: draft.audioUrl },
-      r => ({ url: null, extra: 'TK-' + r.num + ' として登録しました。' + (r.chatworkTask ? 'Chatworkのタスク欄にも入っています。' : '') }), 'task');
+    await save('saveTask', { title: f.get('title'), due: f.get('due') || null, detail: f.get('detail'), audioUrl: draft.audioUrl, baseName: draft.baseName },
+      r => ({ url: null, extra: 'TK-' + r.num + ' として登録' + (r.duplicate ? '済みでした（二重登録は防ぎました）。' : 'しました。') + (r.chatworkTask ? 'Chatworkのタスク欄にも入っています。' : '') }), 'task');
   };
 }
 
@@ -388,7 +398,7 @@ function settings() {
         <button type="button" class="btn quiet" id="reload">アプリを最新版に更新</button>
       </div>
       <p class="small">これらはこの端末の中だけに保存されます。ホーム画面に追加すると、アプリとして開けます（Chromeのメニュー →「ホーム画面に追加」）。</p>
-      <p class="small">v0.3.2</p>
+      <p class="small">v0.5.0</p>
     </form>`;
   $('#f').onsubmit = async e => {
     e.preventDefault();
