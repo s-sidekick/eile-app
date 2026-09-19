@@ -1,4 +1,5 @@
-/* エイル PWA v0.5.0 — ボイスジャーナル & タスク（GAS バックエンドと通信） */
+/* エイル PWA v0.7.0 — ボイスジャーナル & タスク（GAS バックエンドと通信） */
+/* v0.7.0：タスクの確認画面に「顧客」（顧客マスタと1件だけ一致したもの）を表示し、外す・戻すができる */
 'use strict';
 
 // ===== 設定（スマホの中だけに保存。GitHubには置かない）=====
@@ -280,12 +281,16 @@ function taskRow(t, i) {
 function taskConfirm() {
   if (!draft || draft.kind !== 'task') return go('task');
   const t = draft.task;
+  const matched = t.customer || null;                                      // GASが顧客マスタと1件だけ一致させた顧客（無ければ null）
+  const words = Array.isArray(t.customerWords) ? t.customerWords : [];     // Claudeが抜き出した「顧客らしき語」（一致しなかったときの手がかり）
+  let customer = matched;                                                  // 「外す」で null、「戻す」で元に戻る。登録時はこの値だけを送る
   titleEl.textContent = '確認して登録';
-  eile('done', 'こう聞き取りました。期限を確認してください。');
+  eile('done', matched ? `こう聞き取りました。顧客は「${matched.name}」で合っていますか？` : 'こう聞き取りました。期限を確認してください。');
   app.innerHTML = `
     <form class="form" id="f" autocomplete="off">
       <div class="field"><label>タスク名</label><input name="title" value="${esc(t.title)}" required></div>
       <div class="field"><label>期限（無ければ空欄）</label><input name="due" type="date" value="${esc(t.due || '')}"></div>
+      <div class="field"><label>顧客（顧客マスタと1件だけ一致したときに入ります）</label><div class="cust" id="cust"></div></div>
       <div class="field"><label>詳細</label><textarea name="detail">${esc(t.detail)}</textarea></div>
       <p class="small">聞き取り：${esc(draft.transcript)}</p>
       <div class="actions">
@@ -294,11 +299,20 @@ function taskConfirm() {
       </div>
     </form>`;
   bindGo();
+  const renderCust = () => {
+    const box = $('#cust');
+    if (matched && customer) box.innerHTML = `<span class="chip on">${esc(customer.name)}</span><button type="button" class="btn quiet" id="cust-toggle">外す</button>`;
+    else if (matched) box.innerHTML = `<span class="small">なし（外しました）</span><button type="button" class="btn quiet" id="cust-toggle">戻す</button>`;
+    else box.innerHTML = `<span class="small">なし${words.length ? '（「' + esc(words.join('」「')) + '」は顧客マスタに見つからないか、複数の行に当てはまりました）' : ''}</span>`;
+    const b = $('#cust-toggle');
+    if (b) b.onclick = () => { customer = customer ? null : matched; renderCust(); };
+  };
+  renderCust();
   $('#f').onsubmit = async e => {
     e.preventDefault();
     const f = new FormData(e.target);
-    await save('saveTask', { title: f.get('title'), due: f.get('due') || null, detail: f.get('detail'), audioUrl: draft.audioUrl, baseName: draft.baseName },
-      r => ({ url: null, extra: 'TK-' + r.num + ' として登録' + (r.duplicate ? '済みでした（二重登録は防ぎました）。' : 'しました。') + (r.chatworkTask ? 'Chatworkのタスク欄にも入っています。' : '') }), 'task');
+    await save('saveTask', { title: f.get('title'), due: f.get('due') || null, detail: f.get('detail'), customerId: customer ? customer.id : null, audioUrl: draft.audioUrl, baseName: draft.baseName },
+      r => ({ url: null, extra: 'TK-' + r.num + ' として登録' + (r.duplicate ? '済みでした（二重登録は防ぎました）。' : 'しました。') + (r.customer ? '顧客「' + r.customer + '」をひも付けました。' : '') + (r.chatworkTask ? 'Chatworkのタスク欄にも入っています。' : '') }), 'task');
   };
 }
 
@@ -398,7 +412,7 @@ function settings() {
         <button type="button" class="btn quiet" id="reload">アプリを最新版に更新</button>
       </div>
       <p class="small">これらはこの端末の中だけに保存されます。ホーム画面に追加すると、アプリとして開けます（Chromeのメニュー →「ホーム画面に追加」）。</p>
-      <p class="small">v0.5.0</p>
+      <p class="small">v0.7.0</p>
     </form>`;
   $('#f').onsubmit = async e => {
     e.preventDefault();
