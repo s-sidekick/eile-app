@@ -1,5 +1,6 @@
-/* エイル PWA v0.7.0 — ボイスジャーナル & タスク（GAS バックエンドと通信） */
+/* エイル PWA v0.8.0 — ボイスジャーナル & タスク（GAS バックエンドと通信） */
 /* v0.7.0：タスクの確認画面に「顧客」（顧客マスタと1件だけ一致したもの）を表示し、外す・戻すができる */
+/* v0.8.0：「エイルの部屋」（書斎兼ティールーム）を追加。用意した台詞の切替だけで、通信・録音・保存はしない */
 'use strict';
 
 // ===== 設定（スマホの中だけに保存。GitHubには置かない）=====
@@ -74,7 +75,7 @@ function render() {
   }
   const s = seg();
   const key = s[0] || 'home';
-  const screens = { home, journal, task, review, settings };
+  const screens = { home, journal, task, review, settings, room };
   backBtn.hidden = key === 'home';
   (screens[key] || home)(s);
   window.scrollTo(0, 0);
@@ -91,6 +92,7 @@ async function home() {
     <div class="tiles">
       <button class="tile" data-go="journal"><span>ボイスジャーナル<small>今日の考え・判断・違和感を話す</small></span><span>›</span></button>
       <button class="tile" data-go="task"><span>タスク<small>やることを話して登録・完了</small></span><span>›</span></button>
+      <button class="tile room-entry" data-go="room"><span>エイルの部屋<small>エイルと、ひと息つく</small></span><span>›</span></button>
     </div>`;
   bindGo();
   if (store.url && store.pin) {
@@ -412,7 +414,7 @@ function settings() {
         <button type="button" class="btn quiet" id="reload">アプリを最新版に更新</button>
       </div>
       <p class="small">これらはこの端末の中だけに保存されます。ホーム画面に追加すると、アプリとして開けます（Chromeのメニュー →「ホーム画面に追加」）。</p>
-      <p class="small">v0.7.0</p>
+      <p class="small">v0.8.0</p>
     </form>`;
   $('#f').onsubmit = async e => {
     e.preventDefault();
@@ -427,6 +429,113 @@ function settings() {
     if (window.caches) { for (const k of await caches.keys()) await caches.delete(k); }
     location.reload();
   };
+}
+
+// ===== エイルの部屋（v0.8.0）=====
+// 書斎兼ティールームで、エイルとひと息つくための独立した画面。用意した台詞と選択肢を切り替えるだけで、
+// GAS・Notion・Drive・Chatwork・外部AIとの通信、録音、会話や滞在の保存はしない。
+// 会話の状態は画面内の変数だけで持つ（URL や履歴に載せない）。部屋を出ると消え、再入室時は最初に戻る。
+const ROOM_IMG = './img/room_study.png'; // sw.js の SHELL と同じ文字列にする。画像を差し替えるときは sw.js の VERSION を上げる
+const ROOM_SAY = {
+  start:     { say: 'お疲れさまです。お茶にしますか？\n……今日は、仕事のお話でなくても大丈夫ですよ。',
+               choices: [['tea', 'お茶にする', '少し、\nひと息つきましょう'], ['talk', '少し話す', '短いお話を選ぶ'], ['quiet', '静かに過ごす', 'この時間を、\nゆっくりと']] }, // 補助文の \n は折り返し位置の指定
+  tea:       { say: 'では、お茶を淹れましょう。何も決めずに、ひと息つく時間もよいものですね。',
+               choices: [['talk', '少し話す'], ['quiet', '静かに過ごす'], ['start', '選択肢に戻る']] },
+  talk:      { say: '今日の小さな議題です。しおりが見つからないとき、新しい一枚を用意しますか？\nそれとも、探す旅に出ますか？',
+               choices: [['talk_new', '新しく用意する'], ['talk_find', '探してみる'], ['start', '選択肢に戻る']] },
+  talk_new:  { say: 'では、新しい一枚を。なくした方が出てきたら、次の本の分ですね。',
+               choices: [['start', '選択肢に戻る'], ['quiet', '静かに過ごす']] },
+  talk_find: { say: 'では、ご一緒に。途中で別の本を読み始めたら、寄り道ということで。',
+               choices: [['start', '選択肢に戻る'], ['quiet', '静かに過ごす']] },
+  quiet:     { say: '承知しました。では、ここで少しゆっくりしましょう。',
+               choices: [['gaze', '眺める'], ['start', '選択肢に戻る']] },
+  gaze:      { collapsed: true }, // 会話欄と選択肢を畳む。「会話に戻る」と上部の操作（ホームへ・記録・設定）だけ残す
+};
+const ROOM_ICON = {
+  home: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 11.5 12 4.5l8.5 7"/><path d="M6 10.5V19.5h12v-9"/><path d="M10 19.5v-5h4v5"/></svg>',
+  book: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 6.5c-1.6-1.4-3.6-2-6-2H4.5v14H6c2.4 0 4.4.6 6 2 1.6-1.4 3.6-2 6-2h1.5v-14H18c-2.4 0-4.4.6-6 2z"/><path d="M12 6.5v14"/></svg>',
+  gear: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19.6 12l0 .72 2.47.88-.42 1.7-2.63-.39-1.65 2.46-.53.49 1.16 2.39-1.51.91-1.58-2.14-2.91.58-.72-.03-.88 2.5-1.7-.42.39-2.63-2.46-1.65-.49-.53-2.39 1.16-.91-1.51 2.14-1.58L4.4 12l.03-.72-2.5-.88.42-1.7 2.63.39 1.65-2.46.53-.49L6 3.75l1.51-.91 1.58 2.14L12 4.4l.72.03.88-2.5 1.7.42-.39 2.63 2.46 1.65.49.53 2.39-1.16.91 1.51-2.14 1.58z"/><circle cx="12" cy="12" r="3"/></svg>',
+};
+let roomCleanup = null; // 入室中の片づけ処理（退室時に、背後のUIの操作制限などを必ず戻すため）
+
+function room() {
+  if (roomCleanup) roomCleanup(); // 部屋の住所内で再描画された場合に備え、前回分を先に片づける
+  titleEl.textContent = 'エイルの部屋';
+  const d = new Date();
+  const dateText = d.getFullYear() + '.' + String(d.getMonth() + 1).padStart(2, '0') + '.' + String(d.getDate()).padStart(2, '0') + ' ' + '日月火水木金土'[d.getDay()];
+  app.innerHTML = `
+    <section class="room" id="room" tabindex="-1" aria-label="エイルの部屋">
+      <div class="room-stage">
+        <img class="room-art" src="${ROOM_IMG}" alt="書斎の机の向こうに座るエイル" width="941" height="1672" decoding="async">
+        <div class="room-ui">
+          <header class="room-top">
+            <button type="button" class="room-btn room-home" data-go="" aria-label="ホームへ">${ROOM_ICON.home}<span>ホームへ</span></button>
+            <h2 class="room-title">エイルの部屋<small>Eil's Room</small></h2>
+            <div class="room-tools">
+              <button type="button" class="room-btn room-tool" data-go="journal" aria-label="記録（ボイスジャーナルへ）">${ROOM_ICON.book}<span>記録</span></button>
+              <button type="button" class="room-btn room-tool" data-go="settings" aria-label="設定">${ROOM_ICON.gear}<span>設定</span></button>
+            </div>
+          </header>
+          <div class="room-notice" id="room-notice" role="status" hidden></div>
+          <aside class="room-date" id="room-date"><b>${dateText}</b><span>ここでは、ひと息ついていきませんか。</span></aside>
+          <div class="room-bottom">
+            <div class="room-talk" id="room-talk">
+              <div class="room-name">エイル</div>
+              <p class="room-say" id="room-say"></p>
+              <div class="room-choices" id="room-choices"></div>
+            </div>
+            <button type="button" class="room-btn room-return" id="room-return" hidden>会話に戻る</button>
+            <p class="room-foot" id="room-foot">「小さな一歩が、きっとどこかへつながっています。」</p>
+          </div>
+        </div>
+      </div>
+    </section>`;
+  bindGo();
+  const talk = $('#room-talk'), say = $('#room-say'), choices = $('#room-choices'), ret = $('#room-return'), dateEl = $('#room-date'), foot = $('#room-foot'), notice = $('#room-notice');
+
+  // --- 台詞と選択肢の切替（状態は変数 state だけ。URL・履歴・端末保存には載せない）---
+  let state = 'start';
+  function show(id) {
+    const st = ROOM_SAY[id] || ROOM_SAY.start;
+    state = ROOM_SAY[id] ? id : 'start';
+    if (st.collapsed) { // 眺める：会話欄・日付カード・飾り文を畳み、「会話に戻る」を残す
+      talk.hidden = true; dateEl.hidden = true; foot.hidden = true; ret.hidden = false;
+      ret.focus({ preventScroll: true });
+      return;
+    }
+    talk.hidden = false; dateEl.hidden = false; foot.hidden = false; ret.hidden = true;
+    say.textContent = st.say;
+    choices.innerHTML = st.choices.map(([to, label, sub]) => `<button type="button" class="room-choice" data-to="${to}">${esc(label)}${sub ? `<small>${esc(sub)}</small>` : ''}</button>`).join('');
+  }
+  choices.onclick = e => { const b = e.target.closest('[data-to]'); if (b) show(b.dataset.to); };
+  ret.onclick = () => { show('start'); const first = $('.room-choice'); if (first) first.focus({ preventScroll: true }); };
+  show('start');
+
+  // --- 背後の既存UI（ヘッダーとエイルの帯）を、部屋の表示中だけ操作・読み上げの対象から外す ---
+  const shell = [$('header.top'), $('section.eile')];
+  shell.forEach(el => { el.inert = true; el.setAttribute('aria-hidden', 'true'); });
+  $('#room').focus({ preventScroll: true });
+
+  // --- 隠れた帯に出る重要な案内（録音の保留など「注意」状態の文言）は、部屋の中にも同じ文で表示する ---
+  const mirror = () => {
+    if (!eileEl.classList.contains('is-warn')) return;
+    notice.textContent = eileSay.textContent; notice.hidden = false;
+  };
+  const obs = new MutationObserver(mirror);
+  obs.observe(eileEl, { attributes: true, attributeFilter: ['class'] });
+  obs.observe(eileSay, { childList: true, characterData: true, subtree: true });
+  mirror();
+
+  // --- 退室（住所が部屋以外に変わったとき）：操作制限と監視を確実に戻す ---
+  const cleanup = () => {
+    shell.forEach(el => { el.inert = false; el.removeAttribute('aria-hidden'); });
+    obs.disconnect();
+    window.removeEventListener('hashchange', onHash);
+    if (roomCleanup === cleanup) roomCleanup = null;
+  };
+  const onHash = () => { if (seg()[0] !== 'room') cleanup(); };
+  window.addEventListener('hashchange', onHash);
+  roomCleanup = cleanup;
 }
 
 // ===== 起動 =====
