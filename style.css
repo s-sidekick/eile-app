@@ -124,14 +124,14 @@ main { max-width: 560px; margin: 0 auto; padding: 18px 16px 40px; }
 .tile.room-entry:active { background: var(--ai-deep); }
 @media (min-width: 700px) { .tile.room-entry { grid-column: 1 / -1; } }
 
-/* ---- エイルの部屋（v0.8.0）----
+/* ---- エイルの部屋（v0.8.0、v0.8.1 で余白を微調整）----
    既存ヘッダーとエイルの帯の上に重ねる全画面の層。部屋の中だけの色は --r-… に閉じ、既存の変数・クラスは変えない。
    背景の絵（UIなし原画 1枚）は object-fit: cover で切り取り（引き伸ばしはしない）。横に広い画面では中央に 9:16 の舞台を置く額縁表示。 */
 .room { position: fixed; inset: 0; height: 100vh; height: 100dvh; z-index: 20; overflow: hidden; outline: none; background: var(--ai-deep);
   --r-ivory: #F7F2E8; --r-gold: #C9A961; --r-ink: #24304F; --r-sub: #5B6480;
   --r-panel: rgba(247,242,232,.88); --r-panel-line: rgba(201,169,97,.75); --r-tag: rgba(31,47,85,.92); }
 .room [hidden] { display: none !important; }
-.room-stage { position: relative; width: 100%; height: 100%; margin: 0 auto; overflow: hidden; }
+.room-stage { position: relative; width: 100%; height: 100%; margin: 0 auto; overflow: hidden; container-type: inline-size; } /* 舞台の幅で日付カードの表示を切り替える（コンテナクエリ） */
 .room-art { position: absolute; inset: 0; width: 100%; height: 100%; display: block; object-fit: cover; object-position: 50% 30%; }
 .room-ui { position: absolute; inset: 0; display: flex; flex-direction: column; overflow-y: auto; overscroll-behavior: contain; color: var(--r-ink);
   padding: max(10px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(14px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left)); }
@@ -152,25 +152,31 @@ main { max-width: 560px; margin: 0 auto; padding: 18px 16px 40px; }
 .room-notice { flex: none; margin-top: 10px; padding: 10px 12px; border-radius: 12px; border: 1px solid rgba(200,67,79,.4); background: rgba(251,233,235,.95); color: #7A2830; font-size: 13px; line-height: 1.5; }
 
 /* 日付と一言（装飾。狭い画面では省く） */
-.room-date { flex: none; align-self: flex-end; max-width: 64%; margin-top: 8px; padding: 6px 10px; border-radius: 12px; border: 1px solid var(--r-panel-line); background: rgba(31,47,85,.8); color: #fff; font-size: 11.5px; line-height: 1.45; backdrop-filter: blur(4px); }
-.room-date b { display: block; font-size: 12.5px; font-weight: 500; letter-spacing: .08em; }
+/* v0.8.1：カードを小さく（幅は頭の右側に収まる目安 120px 以下）、髪から離す。舞台の幅が 480px 未満では短い一言を使う */
+.room-date { flex: none; align-self: flex-end; max-width: 64%; margin-top: 4px; padding: 4px 9px; border-radius: 10px; border: 1px solid var(--r-panel-line); background: rgba(31,47,85,.78); color: #fff; font-size: 10.5px; line-height: 1.35; backdrop-filter: blur(4px); }
+.room-date b { display: block; font-size: 12px; font-weight: 500; letter-spacing: .03em; font-variant-numeric: tabular-nums; }
+.room-date .room-date-long { display: none; }
+.room-date .room-date-short { display: block; }
+@container (min-width: 480px) { .room-date { font-size: 11.5px; padding: 6px 10px; } .room-date .room-date-long { display: block; } .room-date .room-date-short { display: none; } }
 
 /* 下部：名前付きセリフ欄・選択肢・会話に戻る・飾り文 */
 .room-bottom { flex: none; margin-top: auto; padding-top: 12px; }
-.room-talk { position: relative; margin-top: 14px; padding: 14px 14px 12px; border-radius: 16px; border: 1px solid var(--r-panel-line); background: var(--r-panel); box-shadow: 0 6px 24px rgba(20,28,50,.25); backdrop-filter: blur(8px); }
+.room-talk { position: relative; margin-top: 14px; padding: 12px 12px 10px; border-radius: 16px; border: 1px solid var(--r-panel-line); background: var(--r-panel); box-shadow: 0 6px 24px rgba(20,28,50,.25); backdrop-filter: blur(8px); }
 .room-name { position: absolute; top: -14px; left: 14px; padding: 4px 14px; border-radius: 999px; border: 1px solid var(--r-panel-line); background: var(--r-tag); color: #fff; font-size: 13px; letter-spacing: .1em; }
-.room-say { margin: 8px 0 12px; font-size: 16px; line-height: 1.75; white-space: pre-line; }
+.room-say { margin: 6px 0 10px; font-size: 16px; line-height: 1.6; white-space: pre-line; } /* v0.8.1：行間と下余白を少し詰めた（文字サイズは維持） */
 .room-choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(112px, 1fr)); gap: 8px; }
-.room-choice { min-height: 48px; padding: 10px 8px; border: 1px solid var(--r-panel-line); border-radius: 12px; background: rgba(255,255,255,.75); color: var(--r-ink); font-size: 15px; font-weight: 500; line-height: 1.3; }
-.room-choice small { display: block; margin-top: 2px; font-size: 11px; font-weight: 400; color: var(--r-sub); white-space: pre-line; }
+.room-choice { min-height: 46px; padding: 9px 8px; border: 1px solid var(--r-panel-line); border-radius: 12px; background: rgba(255,255,255,.75); color: var(--r-ink); font-size: 15px; font-weight: 500; line-height: 1.3; }
+.room-choice small { display: block; margin-top: 1px; font-size: 11px; font-weight: 400; color: var(--r-sub); white-space: pre-line; }
 .room-choice:active { background: #fff; }
 .room-return { margin-top: 14px; }
-.room-foot { margin: 10px 4px 0; text-align: center; color: var(--r-ivory); font-size: 12px; letter-spacing: .04em; text-shadow: 0 1px 4px rgba(20,28,50,.85); }
+.room-foot { margin: 8px 4px 2px; text-align: center; color: var(--r-ivory); font-size: 12px; letter-spacing: .04em; text-shadow: 0 1px 4px rgba(20,28,50,.85); }
 
 /* 低い画面：戻る操作・顔・台詞・選択肢を優先し、日付カードと飾り文を省く */
 @media (max-height: 640px) { .room-date, .room-foot { display: none; } .room-say { font-size: 15px; } }
+/* v0.8.1：閉じた縦長画面（縦横比 3:4 より細長い）では飾り文を出さない。開いた画面（額縁表示）では舞台の下に残す */
+@media (max-aspect-ratio: 3/4) { .room-foot { display: none; } }
 /* 幅430px以下：選択肢の文字を少し小さくし、3つ横並びのまま1語が途中で折れないようにする */
-@media (max-width: 430px) { .room-choice { font-size: 14px; padding: 10px 6px; } }
+@media (max-width: 430px) { .room-choice { font-size: 14px; padding: 9px 6px; } }
 /* 狭い幅：日本語名と操作を優先。英字副題を省き、「ホームへ」は家の印だけにする（読み上げ名は aria-label で残る） */
 @media (max-width: 380px) { .room-title small { display: none; } .room-home span { display: none; } }
 /* 横に広い画面（折りたたみを開いた内側など）：中央に 9:16 の舞台を置き、左右は藍で埋める。絵は切らず、伸ばさない */
