@@ -1,6 +1,7 @@
-/* エイル PWA v0.8.0 — ボイスジャーナル & タスク（GAS バックエンドと通信） */
+/* エイル PWA v0.8.1 — ボイスジャーナル & タスク（GAS バックエンドと通信） */
 /* v0.7.0：タスクの確認画面に「顧客」（顧客マスタと1件だけ一致したもの）を表示し、外す・戻すができる */
 /* v0.8.0：「エイルの部屋」（書斎兼ティールーム）を追加。用意した台詞の切替だけで、通信・録音・保存はしない */
+/* v0.8.1：部屋の見た目の微調整（日付カードを小さく・狭い舞台では短い一言、閉じた画面では飾り文を省略、会話欄の余白を詰める） */
 'use strict';
 
 // ===== 設定（スマホの中だけに保存。GitHubには置かない）=====
@@ -414,7 +415,7 @@ function settings() {
         <button type="button" class="btn quiet" id="reload">アプリを最新版に更新</button>
       </div>
       <p class="small">これらはこの端末の中だけに保存されます。ホーム画面に追加すると、アプリとして開けます（Chromeのメニュー →「ホーム画面に追加」）。</p>
-      <p class="small">v0.8.0</p>
+      <p class="small">v0.8.1</p>
     </form>`;
   $('#f').onsubmit = async e => {
     e.preventDefault();
@@ -477,7 +478,7 @@ function room() {
             </div>
           </header>
           <div class="room-notice" id="room-notice" role="status" hidden></div>
-          <aside class="room-date" id="room-date"><b>${dateText}</b><span>ここでは、ひと息ついていきませんか。</span></aside>
+          <aside class="room-date" id="room-date"><b>${dateText}</b><span class="room-date-long">ここでは、ひと息ついていきませんか。</span><span class="room-date-short">ここで、ひと息。</span></aside>
           <div class="room-bottom">
             <div class="room-talk" id="room-talk">
               <div class="room-name">エイル</div>
