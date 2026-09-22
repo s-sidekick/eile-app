@@ -1,5 +1,5 @@
 /* エイル PWA service worker — アプリの見た目だけをキャッシュ。GASへの通信はキャッシュしない */
-const VERSION = 'eile-v0.8.1';
+const VERSION = 'eile-v0.9.0';
 const SHELL = ['./', './index.html', './style.css', './app.js', './manifest.json',
   './img/eile_idle.png', './img/eile_listening.png', './img/eile_thinking.png', './img/eile_done.png', './img/eile_warn.png',
   './img/room_study.png', // v0.8.0 エイルの部屋の背景。app.js の ROOM_IMG と同じ文字列にする（?v= は付けない）
