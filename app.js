@@ -1,7 +1,8 @@
-/* エイル PWA v0.8.1 — ボイスジャーナル & タスク（GAS バックエンドと通信） */
+/* エイル PWA v0.9.0 — ボイスジャーナル & タスク & メモ（GAS バックエンドと通信） */
 /* v0.7.0：タスクの確認画面に「顧客」（顧客マスタと1件だけ一致したもの）を表示し、外す・戻すができる */
 /* v0.8.0：「エイルの部屋」（書斎兼ティールーム）を追加。用意した台詞の切替だけで、通信・録音・保存はしない */
 /* v0.8.1：部屋の見た目の微調整（日付カードを小さく・狭い舞台では短い一言、閉じた画面では飾り文を省略、会話欄の余白を詰める） */
+/* v0.9.0：「メモ」を追加。思いついたことを話す → 確認（タイトル・テーマ・本文）→ Notion メモDBに登録。ジャーナルとは別。週次・月次レビューの材料になる */
 'use strict';
 
 // ===== 設定（スマホの中だけに保存。GitHubには置かない）=====
@@ -76,7 +77,7 @@ function render() {
   }
   const s = seg();
   const key = s[0] || 'home';
-  const screens = { home, journal, task, review, settings, room };
+  const screens = { home, journal, task, memo, review, settings, room };
   backBtn.hidden = key === 'home';
   (screens[key] || home)(s);
   window.scrollTo(0, 0);
@@ -93,6 +94,7 @@ async function home() {
     <div class="tiles">
       <button class="tile" data-go="journal"><span>ボイスジャーナル<small>今日の考え・判断・違和感を話す</small></span><span>›</span></button>
       <button class="tile" data-go="task"><span>タスク<small>やることを話して登録・完了</small></span><span>›</span></button>
+      <button class="tile" data-go="memo"><span>メモ<small>思いついたことを、ひとこと。週次・月次で見返す</small></span><span>›</span></button>
       <button class="tile room-entry" data-go="room"><span>エイルの部屋<small>エイルと、ひと息つく</small></span><span>›</span></button>
     </div>`;
   bindGo();
@@ -149,15 +151,23 @@ function task(s) {
   bindGo();
 }
 
-// ===== 録音（ジャーナル・タスク共通）=====
+// ===== メモ（v0.9.0）=====
+// メニューは無く、タイルからそのまま録音画面へ。確認 → 登録の流れはジャーナルと同じ（確認画面を経てから Notion に入る）
+function memo(s) {
+  if (s[1] === 'confirm') return memoConfirm();
+  if (s[1] === 'done') return doneScreen();
+  return recordScreen('memo');
+}
+
+// ===== 録音（ジャーナル・タスク・メモ共通）=====
 function recordScreen(kind) {
-  titleEl.textContent = kind === 'task' ? 'タスクを話す' : 'ジャーナルを話す';
-  eile('idle', kind === 'task' ? '「〇〇を金曜まで」のように、期限も一緒に。' : '準備ができたら、マイクを押してください。');
+  titleEl.textContent = kind === 'task' ? 'タスクを話す' : kind === 'memo' ? 'メモを話す' : 'ジャーナルを話す';
+  eile('idle', kind === 'task' ? '「〇〇を金曜まで」のように、期限も一緒に。' : kind === 'memo' ? '思いついたことを、そのまま話してください。' : '準備ができたら、マイクを押してください。');
   app.innerHTML = `
     <div class="rec">
       <div class="time" id="time">00:00</div>
       <button class="mic" id="mic">録音する</button>
-      <p class="hint" id="hint">${kind === 'task' ? '短く1件ずつが読み取りやすいです。' : '話し終えたら「止める」。10分を超えると区切ることをおすすめします。'}</p>
+      <p class="hint" id="hint">${kind === 'task' ? '短く1件ずつが読み取りやすいです。' : kind === 'memo' ? '短くて大丈夫です。週次・月次のレビューで見返します。' : '話し終えたら「止める」。10分を超えると区切ることをおすすめします。'}</p>
     </div>`;
   const mic = $('#mic'), time = $('#time'), hint = $('#hint');
   mic.onclick = async () => {
@@ -278,6 +288,41 @@ function journalConfirm() {
 
 function taskRow(t, i) {
   return `<div class="row3"><input type="checkbox" ${t.register ? 'checked' : ''} aria-label="タスクにも登録"><input name="tt" placeholder="タスク名" value="${esc(t.title)}"><input name="td" type="date" value="${esc(t.due || '')}"></div>`;
+}
+
+// ===== メモ確認（v0.9.0）=====
+// 直せるのは日付・タイトル・テーマ・本文だけ。判断・気分などの項目は無い。タスクDBには入らない
+function memoConfirm() {
+  if (!draft || draft.kind !== 'memo') return go('memo');
+  const m = draft.memo;
+  titleEl.textContent = '確認して登録';
+  eile('done', 'こう聞き取りました。違うところだけ直してください。');
+  app.innerHTML = `
+    <form class="form" id="f" autocomplete="off">
+      <div class="row">
+        <div class="field"><label>日付</label><input type="date" name="date" value="${esc(draft.date)}"></div>
+      </div>
+      <div class="field"><label>タイトル</label><input name="title" value="${esc(m.title)}"></div>
+      <div class="field"><label>テーマ</label><div class="chips" id="themes">${THEMES.map(t => `<button type="button" class="chip ${m.themes.includes(t) ? 'on' : ''}" data-t="${t}">${t}</button>`).join('')}</div></div>
+      <div class="field"><label>本文（誤認識の修正だけで十分です）</label><textarea name="text" class="long" required>${esc(m.text)}</textarea></div>
+      <p class="small">元の文字起こしと音声はDriveに保存済みです。このメモは週次・月次のレビューで見返します。</p>
+      <div class="actions">
+        <button type="submit" class="btn primary">Notionに登録する</button>
+        <button type="button" class="btn quiet" data-go="">やめる</button>
+      </div>
+    </form>`;
+  bindGo();
+  $('#themes').onclick = e => { const b = e.target.closest('.chip'); if (b) b.classList.toggle('on'); };
+  $('#f').onsubmit = async e => {
+    e.preventDefault();
+    const f = new FormData(e.target);
+    const body = {
+      date: f.get('date'), title: f.get('title'), text: f.get('text'),
+      themes: $$('#themes .chip.on').map(b => b.dataset.t),
+      audioUrl: draft.audioUrl, baseName: draft.baseName,
+    };
+    await save('saveMemo', body, r => ({ url: r.pageUrl, extra: r.duplicate ? 'この録音は登録済みでした（二重登録は防ぎました）。' : 'メモとして残しました。' }), 'memo');
+  };
 }
 
 // ===== タスク確認 =====
@@ -415,7 +460,7 @@ function settings() {
         <button type="button" class="btn quiet" id="reload">アプリを最新版に更新</button>
       </div>
       <p class="small">これらはこの端末の中だけに保存されます。ホーム画面に追加すると、アプリとして開けます（Chromeのメニュー →「ホーム画面に追加」）。</p>
-      <p class="small">v0.8.1</p>
+      <p class="small">v0.9.0</p>
     </form>`;
   $('#f').onsubmit = async e => {
     e.preventDefault();
