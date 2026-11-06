@@ -3,6 +3,8 @@
 /* v0.8.0：「エイルの部屋」（書斎兼ティールーム）を追加。用意した台詞の切替だけで、通信・録音・保存はしない */
 /* v0.8.1：部屋の見た目の微調整（日付カードを小さく・狭い舞台では短い一言、閉じた画面では飾り文を省略、会話欄の余白を詰める） */
 /* v0.9.0：「メモ」を追加。思いついたことを話す → 確認（タイトル・テーマ・本文）→ Notion メモDBに登録。ジャーナルとは別。週次・月次レビューの材料になる */
+/* v0.10.0：タスクの保存先を毎回「事務所」「個人」から選ぶ（どちらも最初から選んだ状態にはしない）。ジャーナルの中のタスクも1件ずつ選ぶ。
+            一覧は「事務所（井上の分／全員分）」と「個人」。確認待ちを表示。エイルで登録した未着手の行は反対の表へ移せる */
 'use strict';
 
 // ===== 設定（スマホの中だけに保存。GitHubには置かない）=====
@@ -17,6 +19,8 @@ const IMG_VER = '2'; // 画像を差し替えたら数字を上げる（キャ�
 const THEMES = ['仕事', '思想', 'AI', '家族', '健康', '顧客', 'お金'];
 const MOODS = ['良い', '普通', '低め', '高揚', '疲れ'];
 const STEPS = ['なし', '足す', '引く', '変える'];
+const STAFF = ['井上', '末吉', '河津'];     // v0.10.0：事務所の表の担当者（Notion の選択肢と同じ）
+const DEST_NOTE = '「事務所」は末吉さん・河津さんも読みます。個人的な事情や直通LINEの中身は書かないでください。迷ったら「個人」へ。'; // v0.10.0
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => Array.from(el.querySelectorAll(s));
@@ -139,14 +143,14 @@ function journal(s) {
 function task(s) {
   if (s[1] === 'record') return recordScreen('task');
   if (s[1] === 'confirm') return taskConfirm();
-  if (s[1] === 'list') return taskList();
+  if (s[1] === 'list') return taskList(s[2]);   // v0.10.0：task/list/all で全員分
   if (s[1] === 'done') return doneScreen();
   titleEl.textContent = 'タスク';
   eile('idle', 'やることを話すと、期限を読み取って登録します。');
   app.innerHTML = `
     <div class="tiles">
-      <button class="tile accent" data-go="task/record"><span>入力<small>話して登録。Chatworkのタスク欄にも入ります</small></span><span>›</span></button>
-      <button class="tile" data-go="task/list"><span>管理<small>未完のタスクを見て、完了にする</small></span><span>›</span></button>
+      <button class="tile accent" data-go="task/record"><span>入力<small>話して、「事務所」か「個人」かを選んで登録</small></span><span>›</span></button>
+      <button class="tile" data-go="task/list"><span>管理<small>事務所と個人の未完のタスクを見て、完了にする</small></span><span>›</span></button>
     </div>`;
   bindGo();
 }
@@ -259,9 +263,10 @@ function journalConfirm() {
       </div>
       <div class="field"><label>反復する問い</label><textarea name="question">${esc(j.question)}</textarea></div>
       <div class="field"><label>違和感</label><textarea name="discomfort">${esc(j.discomfort)}</textarea></div>
-      <div class="field"><label>話の中に出てきたタスク（チェックするとタスクにも登録）</label>
-        <div class="tasklist" id="tasks">${j.tasks.map((t, i) => taskRow(t, i)).join('')}</div>
+      <div class="field"><label>話の中に出てきたタスク（登録するものだけ、保存先を「事務所」か「個人」にする）</label>
+        <div class="tasklist" id="tasks">${j.tasks.map((t, i) => taskRow(t, i, !draft.server)).join('')}</div>
         <button type="button" class="btn quiet" id="add-task">＋ タスクを足す</button>
+        <p class="small">${draft.server ? esc(DEST_NOTE) + '事務所に入れるタスクには、ジャーナルの見出しと音声のリンクは書きません。' : 'GAS が古い版のため、ここからタスクは登録できません（手順書のとおり GAS を先に更新してください）。'}</p>
       </div>
       <p class="small">元の文字起こしと音声はDriveに保存済みです。</p>
       <div class="actions">
@@ -271,7 +276,7 @@ function journalConfirm() {
     </form>`;
   bindGo();
   $('#themes').onclick = e => { const b = e.target.closest('.chip'); if (b) b.classList.toggle('on'); };
-  $('#add-task').onclick = () => { $('#tasks').insertAdjacentHTML('beforeend', taskRow({ title: '', due: null }, Date.now())); };
+  $('#add-task').onclick = () => { $('#tasks').insertAdjacentHTML('beforeend', taskRow({ title: '', due: null }, Date.now(), !draft.server)); };
   $('#f').onsubmit = async e => {
     e.preventDefault();
     const f = new FormData(e.target);
@@ -279,15 +284,19 @@ function journalConfirm() {
       date: f.get('date'), title: f.get('title'), mood: f.get('mood'), step: f.get('step'), text: f.get('text'),
       decision: f.get('decision'), rationale: f.get('rationale'), question: f.get('question'), discomfort: f.get('discomfort'),
       themes: $$('#themes .chip.on').map(b => b.dataset.t),
-      tasks: $$('#tasks .row3').map(r => ({ register: $('input[type=checkbox]', r).checked, title: $('input[name=tt]', r).value.trim(), due: $('input[name=td]', r).value || null })).filter(t => t.title),
-      audioUrl: draft.audioUrl, baseName: draft.baseName,
+      // v0.10.0：保存先（''＝登録しない／office／personal）。古い GAS のときは送らない
+      tasks: $$('#tasks .row3').map(r => ({ dest: draft.server ? $('select[name=tdest]', r).value : '', title: $('input[name=tt]', r).value.trim(), due: $('input[name=td]', r).value || null })).filter(t => t.title),
+      audioUrl: draft.audioUrl, baseName: draft.baseName, recId: draft.recId,
     };
-    await save('saveJournal', body, r => ({ url: r.pageUrl, extra: (r.duplicate ? 'この録音は登録済みでした（二重登録は防ぎました）。' : '') + (r.taskNums.length ? 'タスク TK-' + r.taskNums.join(', TK-') + ' も登録しました。' : '') }), 'journal');
+    await save('saveJournal', body, r => ({ url: r.pageUrl, extra: (r.duplicate ? 'この録音は登録済みでした（二重登録は防ぎました）。' : '')
+      + ((r.taskNums || []).length ? '事務所の表に TK-' + r.taskNums.join(', TK-') + ' を登録しました。' : '')
+      + ((r.personalNums || []).length ? '個人の表に MY-' + r.personalNums.join(', MY-') + ' を登録しました。' : '') }), 'journal');
   };
 }
 
-function taskRow(t, i) {
-  return `<div class="row3"><input type="checkbox" ${t.register ? 'checked' : ''} aria-label="タスクにも登録"><input name="tt" placeholder="タスク名" value="${esc(t.title)}"><input name="td" type="date" value="${esc(t.due || '')}"></div>`;
+/* v0.10.0：チェックの代わりに保存先を選ぶ。最初は「登録しない」（事務所・個人のどちらも既定にしない） */
+function taskRow(t, i, locked) {
+  return `<div class="row3"><select name="tdest" aria-label="保存先" ${locked ? 'disabled' : ''}><option value="">登録しない</option><option value="office">事務所</option><option value="personal">個人</option></select><input name="tt" placeholder="タスク名" value="${esc(t.title)}"><input name="td" type="date" value="${esc(t.due || '')}"></div>`;
 }
 
 // ===== メモ確認（v0.9.0）=====
@@ -319,7 +328,7 @@ function memoConfirm() {
     const body = {
       date: f.get('date'), title: f.get('title'), text: f.get('text'),
       themes: $$('#themes .chip.on').map(b => b.dataset.t),
-      audioUrl: draft.audioUrl, baseName: draft.baseName,
+      audioUrl: draft.audioUrl, baseName: draft.baseName, recId: draft.recId, // v0.10.0：recId＝二重登録防止の鍵（録音ごと）
     };
     await save('saveMemo', body, r => ({ url: r.pageUrl, extra: r.duplicate ? 'この録音は登録済みでした（二重登録は防ぎました）。' : 'メモとして残しました。' }), 'memo');
   };
@@ -332,17 +341,25 @@ function taskConfirm() {
   const matched = t.customer || null;                                      // GASが顧客マスタと1件だけ一致させた顧客（無ければ null）
   const words = Array.isArray(t.customerWords) ? t.customerWords : [];     // Claudeが抜き出した「顧客らしき語」（一致しなかったときの手がかり）
   let customer = matched;                                                  // 「外す」で null、「戻す」で元に戻る。登録時はこの値だけを送る
+  const who = STAFF.includes(t.assignee) ? t.assignee : '井上';            // v0.10.0：話の中で末吉さん・河津さんに頼んでいればその人。なければ井上
+  const oldServer = !draft.server;                                         // v0.10.0：GAS が古い版なら登録させない（「個人」が事務所に入らないように）
   titleEl.textContent = '確認して登録';
   eile('done', matched ? `こう聞き取りました。顧客は「${matched.name}」で合っていますか？` : 'こう聞き取りました。期限を確認してください。');
+  // v0.10.0：登録ボタンは「事務所に登録」「個人に登録」の2つ。どちらも最初から選んだ状態にはせず、押した方に保存する。
+  //          ボタンは type="button"（入力欄で Enter を押しても、どちらにも保存されない）
   app.innerHTML = `
     <form class="form" id="f" autocomplete="off">
       <div class="field"><label>タスク名</label><input name="title" value="${esc(t.title)}" required></div>
       <div class="field"><label>期限（無ければ空欄）</label><input name="due" type="date" value="${esc(t.due || '')}"></div>
       <div class="field"><label>顧客（顧客マスタと1件だけ一致したときに入ります）</label><div class="cust" id="cust"></div></div>
-      <div class="field"><label>詳細</label><textarea name="detail">${esc(t.detail)}</textarea></div>
+      <div class="field"><label>担当者（「事務所」に登録するときだけ使います）</label><select name="assignee">${STAFF.map(n => `<option ${n === who ? 'selected' : ''}>${n}</option>`).join('')}</select></div>
+      <div class="field"><label>詳細（事務所に登録すると、職員が読みます）</label><textarea name="detail">${esc(t.detail)}</textarea></div>
       <p class="small">聞き取り：${esc(draft.transcript)}</p>
-      <div class="actions">
-        <button type="submit" class="btn primary">登録する</button>
+      ${oldServer ? `<div class="notice warn">GAS が古い版のため登録できません。手順書のとおり、先に GAS を v0.10 にしてください。</div>` : ''}
+      <p class="small dest-note">保存先を選んでください。${esc(DEST_NOTE)}</p>
+      <div class="actions dest">
+        <button type="button" class="btn primary" data-dest="office" ${oldServer ? 'disabled' : ''}>事務所に登録</button>
+        <button type="button" class="btn primary" data-dest="personal" ${oldServer ? 'disabled' : ''}>個人に登録</button>
         <button type="button" class="btn quiet" data-go="task">やめる</button>
       </div>
     </form>`;
@@ -356,23 +373,32 @@ function taskConfirm() {
     if (b) b.onclick = () => { customer = customer ? null : matched; renderCust(); };
   };
   renderCust();
-  $('#f').onsubmit = async e => {
-    e.preventDefault();
-    const f = new FormData(e.target);
-    await save('saveTask', { title: f.get('title'), due: f.get('due') || null, detail: f.get('detail'), customerId: customer ? customer.id : null, audioUrl: draft.audioUrl, baseName: draft.baseName },
-      r => ({ url: null, extra: 'TK-' + r.num + ' として登録' + (r.duplicate ? '済みでした（二重登録は防ぎました）。' : 'しました。') + (r.customer ? '顧客「' + r.customer + '」をひも付けました。' : '') + (r.chatworkTask ? 'Chatworkのタスク欄にも入っています。' : '') }), 'task');
-  };
+  $('#f').onsubmit = e => e.preventDefault(); // v0.10.0：Enter キーでは保存しない（保存は2つのボタンだけ）
+  $$('#f [data-dest]').forEach(btn => btn.onclick = async () => {
+    const form = $('#f');
+    if (!form.reportValidity()) return;      // タスク名が空なら止める
+    const f = new FormData(form);
+    const dest = btn.dataset.dest;
+    await save('saveTask', { dest, title: f.get('title'), due: f.get('due') || null, detail: f.get('detail'), assignee: f.get('assignee'), customerId: customer ? customer.id : null, audioUrl: draft.audioUrl, baseName: draft.baseName, recId: draft.recId },
+      r => ({ url: null, extra: (r.dest === 'personal' ? '個人の表に ' : '事務所の表に ') + (r.label || 'TK-' + r.num) + ' として登録' + (r.duplicate ? '済みでした（二重登録は防ぎました）。' : 'しました。')
+        + (r.dest === 'office' && r.assignee && r.assignee !== '井上' ? '担当は' + r.assignee + 'さんです。' : '')
+        + (r.customer ? '顧客「' + r.customer + '」をひも付けました。' : '') + (r.chatworkTask ? 'Chatworkのタスク欄にも入っています。' : '') }), 'task', btn);
+  });
 }
 
-async function save(action, body, summarize, back) {
-  const btn = $('#f button[type=submit]'); btn.disabled = true; btn.textContent = '登録中…';
+/* v0.10.0：btn を渡すと、そのボタンを押したものとして扱う（保存先ボタンは2つとも止める）。失敗したら元の文字に戻す */
+async function save(action, body, summarize, back, btn) {
+  btn = btn || $('#f button[type=submit]');
+  const group = btn.dataset.dest ? $$('#f [data-dest]') : [btn];
+  const label = btn.textContent;
+  group.forEach(b => { b.disabled = true; }); btn.textContent = '登録中…';
   eile('thinking', '登録しています…');
   try {
     const r = await api(action, body);
     draft = { done: summarize(r), back };
     go(back + '/done');
   } catch (err) {
-    btn.disabled = false; btn.textContent = '登録する';
+    group.forEach(b => { b.disabled = false; }); btn.textContent = label;
     eile('warn', '登録できませんでした。' + (err.message || err));
   }
 }
@@ -390,27 +416,56 @@ function doneScreen() {
   bindGo();
 }
 
-// ===== タスク一覧 =====
-async function taskList() {
+// ===== タスク一覧（v0.10.0：事務所と個人の2つ）=====
+// 事務所：ふだんは「井上の分」（井上が担当か、井上が頼んだもの）。「全員分」を押すと末吉さん・河津さん同士の分も出す
+// 状態が空の行は未着手として扱う。確認待ちは「確認待ち」と出し、完了にできる（頼んだ井上が確かめた、の意味）
+async function taskList(scope, note) {
+  scope = scope === 'all' ? 'all' : 'mine';
   titleEl.textContent = '未完のタスク';
   eile('thinking', '一覧を取りに行っています…');
   app.innerHTML = `<div class="empty">読み込み中…</div>`;
   try {
-    const { tasks } = await api('listTasks');
-    eile('idle', tasks.length ? `未完は ${tasks.length} 件です。` : '未完のタスクはありません。');
-    if (!tasks.length) { app.innerHTML = `<div class="empty">すべて片づいています。</div>`; return; }
+    const r = await api('listTasks', { scope });
+    const office = (r.office || r.tasks || []).map(t => ({ table: 'office', label: 'TK-' + t.num, ...t }));
+    const personal = (r.personal || []).map(t => ({ table: 'personal', label: 'MY-' + t.num, ...t }));
+    const total = office.length + personal.length;
+    eile(note ? 'done' : 'idle', (note ? note + ' ' : '') + (total ? `未完は 事務所 ${office.length} 件・個人 ${personal.length} 件です。` : '未完のタスクはありません。'));
     const today = addDaysLocal(0);
-    app.innerHTML = `<div class="list">${tasks.map(t => `
+    const item = t => {
+      const st = t.status === '進行中' ? '・進行中' : t.status === '確認待ち' ? '・<b class="st-wait">確認待ち</b>' : '';
+      const who = t.table === 'office' ? (t.assignee ? '・担当 ' + esc(t.assignee) : '') + (t.requester && t.requester !== '井上' ? '・依頼 ' + esc(t.requester) : '') : '';
+      return `
       <div class="item">
-        <div><div class="t"><span class="num">TK-${t.num}</span>${esc(t.title)}</div>
-          <div class="m">${t.due ? `<span class="${t.due < today ? 'over' : ''}">期限 ${esc(t.due.slice(5).replace('-', '/'))}</span>` : '期限なし'}${t.assignee ? '・' + esc(t.assignee) : ''}${t.status === '進行中' ? '・進行中' : ''}</div></div>
-        <button data-num="${t.num}">完了</button>
-      </div>`).join('')}</div>`;
-    $$('.item button').forEach(b => b.onclick = async () => {
-      if (!confirm('TK-' + b.dataset.num + ' を完了にしますか？')) return;
-      b.disabled = true; b.textContent = '…';
-      try { await api('completeTask', { num: Number(b.dataset.num) }); taskList(); }
-      catch (err) { b.disabled = false; b.textContent = '完了'; eile('warn', err.message || String(err)); }
+        <div><div class="t"><span class="num">${esc(t.label)}</span>${esc(t.title)}</div>
+          <div class="m">${t.due ? `<span class="${t.due < today ? 'over' : ''}">期限 ${esc(t.due.slice(5).replace('-', '/'))}</span>` : '期限なし'}${who}${st}</div></div>
+        <div class="item-btns">
+          <button data-act="done" data-table="${t.table}" data-num="${t.num}" data-label="${esc(t.label)}" data-wait="${t.status === '確認待ち' ? '1' : ''}">完了</button>
+          ${t.movable ? `<button class="quiet" data-act="move" data-table="${t.table}" data-num="${t.num}" data-label="${esc(t.label)}">${t.table === 'office' ? '個人へ移す' : '事務所へ移す'}</button>` : ''}
+        </div>
+      </div>`;
+    };
+    const section = (head, list, empty) => `<h3 class="list-head">${head}（${list.length}件）</h3>` + (list.length ? `<div class="list">${list.map(item).join('')}</div>` : `<div class="empty small">${empty}</div>`);
+    app.innerHTML = `
+      <div class="tabs two"><button class="${scope === 'mine' ? 'on' : ''}" data-go="task/list">井上の分</button><button class="${scope === 'all' ? 'on' : ''}" data-go="task/list/all">全員分</button></div>
+      ${r.office ? '' : `<div class="notice warn">GAS が古い版です。事務所の表だけを表示しています。</div>`}
+      ${section('事務所' + (scope === 'all' ? '（全員分）' : '（井上が担当か、頼んだもの）'), office, 'ありません。')}
+      ${r.office ? section('個人', personal, r.personalError ? esc(r.personalError) : 'ありません。') : ''}`;
+    bindGo();
+    $$('.item-btns button').forEach(b => b.onclick = async () => {
+      const { act, table, num, label, wait } = b.dataset;
+      const msg = act === 'done'
+        ? label + (wait ? ' を確かめて完了にしますか？' : ' を完了にしますか？')
+        : table === 'office'
+          ? label + ' を個人の表へ移しますか？\n事務所の表の行は「取消」になり、タスク名と詳細は消えます（Notion の編集履歴には残ります）。' + (r.chatwork ? '\n（Chatwork に出た投稿とタスク欄の名前は消えません。タスク欄は完了になります）' : '')
+          : label + ' を事務所の表へ移しますか？\n末吉さん・河津さんも読めるようになります。' + (r.chatwork ? '\n（Chatwork のタスク欄にも入ります）' : '');
+      if (!confirm(msg)) return;
+      const text = b.textContent;
+      const row = $$('button', b.closest('.item-btns'));   // 同じ行のボタンはまとめて止める（完了と移すの同時押しを防ぐ）
+      row.forEach(x => { x.disabled = true; }); b.textContent = '…';
+      try {
+        const out = await api(act === 'done' ? 'completeTask' : 'moveTask', { table, num: Number(num) });
+        taskList(scope, act === 'move' ? label + ' を ' + (out.label || '') + ' として移しました。' : '');
+      } catch (err) { row.forEach(x => { x.disabled = false; }); b.textContent = text; eile('warn', err.message || String(err)); }
     });
   } catch (err) {
     eile('warn', '取得できませんでした。');
@@ -460,7 +515,7 @@ function settings() {
         <button type="button" class="btn quiet" id="reload">アプリを最新版に更新</button>
       </div>
       <p class="small">これらはこの端末の中だけに保存されます。ホーム画面に追加すると、アプリとして開けます（Chromeのメニュー →「ホーム画面に追加」）。</p>
-      <p class="small">v0.9.0</p>
+      <p class="small">v0.10.0</p>
     </form>`;
   $('#f').onsubmit = async e => {
     e.preventDefault();
