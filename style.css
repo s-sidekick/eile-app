@@ -78,6 +78,11 @@ main { max-width: 560px; margin: 0 auto; padding: 18px 16px 40px; }
 .tasklist { display: grid; gap: 10px; }
 .tasklist .row3 input[type="checkbox"] { width: 22px; height: 22px; }
 .tasklist .row3 select { width: auto; padding: 10px 8px; } /* v0.10.0：保存先（登録しない／事務所／個人） */
+/* v0.10.1：1件を2段に。1段目＝タスク名（横いっぱい・折り返して全部見える）、2段目＝保存先と期限 */
+.tasklist .row3 { grid-template-columns: 1fr 150px; grid-template-areas: "tt tt" "dest due"; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+.tasklist .row3 [name=tt] { grid-area: tt; min-height: 0; padding: 10px 12px; line-height: 1.5; }
+.tasklist .row3 [name=tdest] { grid-area: dest; width: 100%; }
+.tasklist .row3 [name=td] { grid-area: due; }
 
 /* v0.7：タスク確認画面の「顧客」欄（一致した顧客名のチップと、外す／戻すボタン） */
 .cust { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; min-height: 44px; }

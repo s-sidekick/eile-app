@@ -5,6 +5,8 @@
 /* v0.9.0：「メモ」を追加。思いついたことを話す → 確認（タイトル・テーマ・本文）→ Notion メモDBに登録。ジャーナルとは別。週次・月次レビューの材料になる */
 /* v0.10.0：タスクの保存先を毎回「事務所」「個人」から選ぶ（どちらも最初から選んだ状態にはしない）。ジャーナルの中のタスクも1件ずつ選ぶ。
             一覧は「事務所（井上の分／全員分）」と「個人」。確認待ちを表示。エイルで登録した未着手の行は反対の表へ移せる */
+/* v0.10.1：ジャーナルの確認画面のタスク名の欄を広げた（1行目いっぱいに置き、長い名前は折り返して全部見える。2行目に保存先と期限）。
+            一覧のタブ「井上の分」を「ケイの分」に（表示の名前だけ。中身は同じ＝井上が担当か、井上が頼んだもの） */
 'use strict';
 
 // ===== 設定（スマホの中だけに保存。GitHubには置かない）=====
@@ -285,7 +287,8 @@ function journalConfirm() {
       decision: f.get('decision'), rationale: f.get('rationale'), question: f.get('question'), discomfort: f.get('discomfort'),
       themes: $$('#themes .chip.on').map(b => b.dataset.t),
       // v0.10.0：保存先（''＝登録しない／office／personal）。古い GAS のときは送らない
-      tasks: $$('#tasks .row3').map(r => ({ dest: draft.server ? $('select[name=tdest]', r).value : '', title: $('input[name=tt]', r).value.trim(), due: $('input[name=td]', r).value || null })).filter(t => t.title),
+      // v0.10.1：タスク名は複数行の欄になったので、改行は空白にまとめて送る
+      tasks: $$('#tasks .row3').map(r => ({ dest: draft.server ? $('select[name=tdest]', r).value : '', title: $('[name=tt]', r).value.replace(/\s+/g, ' ').trim(), due: $('input[name=td]', r).value || null })).filter(t => t.title),
       audioUrl: draft.audioUrl, baseName: draft.baseName, recId: draft.recId,
     };
     await save('saveJournal', body, r => ({ url: r.pageUrl, extra: (r.duplicate ? 'この録音は登録済みでした（二重登録は防ぎました）。' : '')
@@ -295,8 +298,9 @@ function journalConfirm() {
 }
 
 /* v0.10.0：チェックの代わりに保存先を選ぶ。最初は「登録しない」（事務所・個人のどちらも既定にしない） */
+/* v0.10.1：タスク名を先頭・1行目いっぱいの複数行の欄にした（狭い画面でも全部読める。並びは style.css の .tasklist .row3） */
 function taskRow(t, i, locked) {
-  return `<div class="row3"><select name="tdest" aria-label="保存先" ${locked ? 'disabled' : ''}><option value="">登録しない</option><option value="office">事務所</option><option value="personal">個人</option></select><input name="tt" placeholder="タスク名" value="${esc(t.title)}"><input name="td" type="date" value="${esc(t.due || '')}"></div>`;
+  return `<div class="row3"><textarea name="tt" rows="2" placeholder="タスク名" aria-label="タスク名">${esc(t.title)}</textarea><select name="tdest" aria-label="保存先" ${locked ? 'disabled' : ''}><option value="">登録しない</option><option value="office">事務所</option><option value="personal">個人</option></select><input name="td" type="date" aria-label="期限" value="${esc(t.due || '')}"></div>`;
 }
 
 // ===== メモ確認（v0.9.0）=====
@@ -446,7 +450,7 @@ async function taskList(scope, note) {
     };
     const section = (head, list, empty) => `<h3 class="list-head">${head}（${list.length}件）</h3>` + (list.length ? `<div class="list">${list.map(item).join('')}</div>` : `<div class="empty small">${empty}</div>`);
     app.innerHTML = `
-      <div class="tabs two"><button class="${scope === 'mine' ? 'on' : ''}" data-go="task/list">井上の分</button><button class="${scope === 'all' ? 'on' : ''}" data-go="task/list/all">全員分</button></div>
+      <div class="tabs two"><button class="${scope === 'mine' ? 'on' : ''}" data-go="task/list">ケイの分</button><button class="${scope === 'all' ? 'on' : ''}" data-go="task/list/all">全員分</button></div>
       ${r.office ? '' : `<div class="notice warn">GAS が古い版です。事務所の表だけを表示しています。</div>`}
       ${section('事務所' + (scope === 'all' ? '（全員分）' : '（井上が担当か、頼んだもの）'), office, 'ありません。')}
       ${r.office ? section('個人', personal, r.personalError ? esc(r.personalError) : 'ありません。') : ''}`;
@@ -515,7 +519,7 @@ function settings() {
         <button type="button" class="btn quiet" id="reload">アプリを最新版に更新</button>
       </div>
       <p class="small">これらはこの端末の中だけに保存されます。ホーム画面に追加すると、アプリとして開けます（Chromeのメニュー →「ホーム画面に追加」）。</p>
-      <p class="small">v0.10.0</p>
+      <p class="small">v0.10.1</p>
     </form>`;
   $('#f').onsubmit = async e => {
     e.preventDefault();
